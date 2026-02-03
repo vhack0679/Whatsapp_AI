@@ -1,6 +1,7 @@
 <?php
-// IMPORTANT: plain text response
-header("Content-Type: text/plain; charset=UTF-8");
+
+header("Content-Type: application/json; charset=UTF-8");
+
 
 /* ==============================
    CONFIG
@@ -17,7 +18,7 @@ $GEMINI_API_KEY = getenv("GEMINI_API_KEY");
    READ RAW INPUT (CRITICAL)
 ================================ */
 $raw = file_get_contents("php://input");
-file_put_contents("log.txt", date("Y-m-d H:i:s") . "\n" . $raw . "\n\n", FILE_APPEND);
+// file_put_contents("log.txt", date("Y-m-d H:i:s") . "\n" . $raw . "\n\n", FILE_APPEND);
 
 $data = json_decode($raw, true) ?: [];
 
@@ -161,4 +162,8 @@ if ($message === "" || in_array($messageLower, ["hi", "hello", "start"])) {
 /* ==============================
    SEND PLAIN TEXT
 ================================ */
-echo $reply;
+echo json_encode(
+    ["reply" => $reply],
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+);
+
