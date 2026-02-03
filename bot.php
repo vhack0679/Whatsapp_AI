@@ -5,11 +5,6 @@ header("Content-Type: application/json; charset=UTF-8");
    CONFIG
 ================================ */
 $CLINIC_NAME = "Vijaya Homoeopathic Clinic";
-$WEBSITE = "https://vijayahomoeopathic.rf.gd";
-$TRACK_URL = "https://vijayahomoeopathic.rf.gd/App/track.html";
-$PRESCRIPTION_URL = "https://vijayahomoeopathic.rf.gd/App/prescriptions.html";
-$APPOINTMENT_URL = "https://vijayahomoeopathic.rf.gd/App/appointment.html";
-
 $GEMINI_API_KEY = getenv("GEMINI_API_KEY");
 
 /* ==============================
@@ -17,102 +12,80 @@ $GEMINI_API_KEY = getenv("GEMINI_API_KEY");
 ================================ */
 $raw = file_get_contents("php://input");
 
-// Try JSON first
+// Try JSON
 $data = json_decode($raw, true);
+$parseMode = "json";
 
-// Fallback to form-urlencoded (WhatsAuto sends this)
+// Fallback to form (WhatsAuto)
 if (!is_array($data)) {
     parse_str($raw, $data);
+    $parseMode = "form";
 }
 
 $message = trim($data['message'] ?? '');
 $messageLower = mb_strtolower($message, 'UTF-8');
 
 /* ==============================
-   IGNORE PHONE-NUMBER JUNK
+   FORCE LANGUAGE DETECTION
 ================================ */
-if (preg_match('/^\+?\d{10,13}$/', $messageLower)) {
-    echo json_encode(
-        ["reply" => mainMenu("en", $CLINIC_NAME)],
-        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
-    );
-    exit;
-}
-
-/* ==============================
-   LANGUAGE DETECTION (CONFIRMED)
-================================ */
-function detectLanguage($text) {
+function detectLangStrict($text) {
     if (preg_match('/[\x{0C00}-\x{0C7F}]/u', $text)) return "te"; // Telugu
     if (preg_match('/[\x{0900}-\x{097F}]/u', $text)) return "hi"; // Hindi
     return "en";
 }
 
-$lang = detectLanguage($message);
+$lang = detectLangStrict($message);
 
 /* ==============================
-   MENU
+   MENU (LANGUAGE FORCED)
 ================================ */
-function mainMenu($lang, $clinic) {
+function menu($lang, $clinic) {
 
     if ($lang === "te") {
-        return "👋 $clinic కు స్వాగతం\n\nనంబర్ పంపండి 👇\n\n"
-            ."1️⃣ మందుల ట్రాకింగ్ 💊\n"
-            ."2️⃣ ప్రిస్క్రిప్షన్ 📄\n"
-            ."3️⃣ అపాయింట్మెంట్ 📅\n"
-            ."4️⃣ క్లినిక్ వివరాలు 🏥\n"
-            ."5️⃣ సహాయకుడితో మాట్లాడండి 👩‍⚕️";
+        return "🟢 తెలుగు మెనూ గుర్తించబడింది\n\n"
+            ."👋 $clinic కు స్వాగతం\n\n"
+            ."1️⃣ మందుల ట్రాకింగ్\n"
+            ."2️⃣ ప్రిస్క్రిప్షన్\n"
+            ."3️⃣ అపాయింట్మెంట్\n"
+            ."4️⃣ క్లినిక్ వివరాలు\n"
+            ."5️⃣ సహాయకుడు";
     }
 
     if ($lang === "hi") {
-        return "👋 $clinic में आपका स्वागत है\n\nनंबर भेजें 👇\n\n"
-            ."1️⃣ दवा ट्रैक करें 💊\n"
-            ."2️⃣ प्रिस्क्रिप्शन 📄\n"
-            ."3️⃣ अपॉइंटमेंट 📅\n"
-            ."4️⃣ क्लिनिक जानकारी 🏥\n"
-            ."5️⃣ सहायक से बात करें 👩‍⚕️";
+        return "🟢 हिंदी मेनू पहचाना गया\n\n"
+            ."👋 $clinic में आपका स्वागत है\n\n"
+            ."1️⃣ दवा ट्रैक करें\n"
+            ."2️⃣ प्रिस्क्रिप्शन\n"
+            ."3️⃣ अपॉइंटमेंट\n"
+            ."4️⃣ क्लिनिक जानकारी\n"
+            ."5️⃣ सहायक";
     }
 
-    return "👋 Welcome to $clinic\n\nReply with a number 👇\n\n"
-        ."1️⃣ Track Medicine 💊\n"
-        ."2️⃣ Prescriptions 📄\n"
-        ."3️⃣ Appointment 📅\n"
-        ."4️⃣ Clinic Details 🏥\n"
-        ."5️⃣ Talk to Assistant 👩‍⚕️";
+    return "🟢 English menu detected\n\n"
+        ."👋 Welcome to $clinic\n\n"
+        ."1️⃣ Track Medicine\n"
+        ."2️⃣ Prescriptions\n"
+        ."3️⃣ Appointment\n"
+        ."4️⃣ Clinic Details\n"
+        ."5️⃣ Assistant";
 }
 
 /* ==============================
-   GEMINI AI (ROBUST PARSER)
+   GEMINI AI WITH FULL DEBUG
 ================================ */
-function askGemini($userMessage, $lang, $apiKey) {
+function askGeminiDebug($text, $lang, $apiKey) {
 
     if (!$apiKey) {
-        return "⚠️ AI service unavailable. Please contact the clinic.";
+        return "❌ DEBUG: GEMINI_API_KEY NOT FOUND";
     }
-
-    $language =
-        ($lang === "te") ? "Telugu" :
-        (($lang === "hi") ? "Hindi" : "English");
-
-    $prompt = "
-You are a homoeopathic clinic assistant in India.
-
-Rules:
-- Reply ONLY in $language
-- Give general health guidance only
-- Do NOT diagnose or prescribe medicines
-- Keep reply short and caring
-- Always advise consulting the doctor
-
-User message:
-$userMessage
-";
 
     $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey";
 
     $payload = [
         "contents" => [[
-            "parts" => [[ "text" => $prompt ]]
+            "parts" => [[
+                "text" => "Reply briefly in ".$lang.": ".$text
+            ]]
         ]]
     ];
 
@@ -126,73 +99,53 @@ $userMessage
     ]);
 
     $response = curl_exec($ch);
+
+    if ($response === false) {
+        return "❌ DEBUG: CURL ERROR\n".curl_error($ch);
+    }
+
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    $result = json_decode($response, true);
+    $json = json_decode($response, true);
 
-    // ✅ Gemini 1.5 SAFE EXTRACTION
     $aiText = null;
-
-    if (isset($result['candidates'][0]['content']['parts'][0]['text'])) {
-        $aiText = $result['candidates'][0]['content']['parts'][0]['text'];
-    } elseif (isset($result['candidates'][0]['output_text'])) {
-        $aiText = $result['candidates'][0]['output_text'];
+    if (isset($json['candidates'][0]['content']['parts'][0]['text'])) {
+        $aiText = $json['candidates'][0]['content']['parts'][0]['text'];
     }
 
-    if (!$aiText || trim($aiText) === "") {
-        return "🙏 Please consult our doctor for proper guidance.";
-    }
-
-    if ($lang === "te") {
-        return trim($aiText) . "\n\n⚠️ ఇది సాధారణ సమాచారం మాత్రమే. చికిత్స కోసం డాక్టర్‌ను సంప్రదించండి.";
-    }
-
-    if ($lang === "hi") {
-        return trim($aiText) . "\n\n⚠️ यह केवल सामान्य जानकारी है। उपचार के लिए डॉक्टर से संपर्क करें।";
-    }
-
-    return trim($aiText) . "\n\n⚠️ This is general information only. Please consult our doctor.";
+    return
+        "🧠 AI DEBUG\n\n"
+        ."HTTP CODE: $httpCode\n\n"
+        ."LANG: $lang\n\n"
+        ."RAW RESPONSE:\n$response\n\n"
+        ."EXTRACTED TEXT:\n".($aiText ?? "NULL");
 }
 
 /* ==============================
-   ROUTING
+   ROUTING (DEBUG FIRST)
 ================================ */
-if ($messageLower === "" || in_array($messageLower, ["hi", "hello", "start"], true)) {
 
-    $reply = mainMenu($lang, $CLINIC_NAME);
+// 1️⃣ ALWAYS show debug info + menu
+if ($message === "" || !in_array($messageLower, ["1","2","3","4","5"], true)) {
 
-} elseif (in_array($messageLower, ["1","2","3","4","5"], true)) {
-
-    switch ($messageLower) {
-        case "1":
-            $reply = "📦 Track your medicine order here:\n👉 $TRACK_URL";
-            break;
-        case "2":
-            $reply = "📄 View your prescriptions:\n👉 $PRESCRIPTION_URL";
-            break;
-        case "3":
-            $reply = "📅 Book an appointment:\n👉 $APPOINTMENT_URL";
-            break;
-        case "4":
-            $reply = "🏥 $CLINIC_NAME\n🌐 $WEBSITE";
-            break;
-        case "5":
-            $reply = "👩‍⚕️ Our clinic assistant will respond shortly.";
-            break;
-    }
+    $reply =
+        "🛠 DEBUG INFO\n\n"
+        ."Parse mode: $parseMode\n"
+        ."Message: [$message]\n"
+        ."Hex: ".bin2hex($message)."\n"
+        ."Detected lang: $lang\n\n"
+        ."------------------\n\n"
+        .menu($lang, $CLINIC_NAME);
 
 } else {
 
-    // AI trigger: any real language character
-    if (preg_match('/[a-zA-Z\x{0900}-\x{097F}\x{0C00}-\x{0C7F}]/u', $message)) {
-        $reply = askGemini($message, $lang, $GEMINI_API_KEY);
-    } else {
-        $reply = mainMenu($lang, $CLINIC_NAME);
-    }
+    // 2️⃣ If user typed number, call AI for testing
+    $reply = askGeminiDebug($message, $lang, $GEMINI_API_KEY);
 }
 
 /* ==============================
-   RESPONSE (AS PER APP SPEC)
+   RESPONSE
 ================================ */
 echo json_encode(
     ["reply" => $reply],
