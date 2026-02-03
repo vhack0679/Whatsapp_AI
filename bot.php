@@ -10,8 +10,54 @@ $TRACK_URL = "https://vijayahomoeopathic.rf.gd/App/track.html";
 $PRESCRIPTION_URL = "https://vijayahomoeopathic.rf.gd/App/prescriptions.html";
 $APPOINTMENT_URL = "https://vijayahomoeopathic.rf.gd/App/appointment.html";
 
-$DOCTOR_WHATSAPP = "9198XXXXXXXX"; // doctor number (digits only)
 $GEMINI_API_KEY = getenv("GEMINI_API_KEY");
+
+/* ==============================
+   REDIS CONNECTION
+================================ */
+function redisClient() {
+    static $redis = null;
+    if ($redis !== null) return $redis;
+
+    $url = getenv("REDIS_URL");
+    if (!$url) return null;
+
+    $parts = parse_url($url);
+
+    $redis = new Redis();
+    $redis->connect($parts['host'], $parts['port']);
+
+    if (!empty($parts['pass'])) {
+        $redis->auth($parts['pass']);
+    }
+
+    return $redis;
+}
+
+/* ==============================
+   REDIS SESSION HELPERS
+================================ */
+function getSession($phone) {
+    $redis = redisClient();
+    if (!$redis) return [];
+
+    $data = $redis->get("wa:session:$phone");
+    return $data ? json_decode($data, true) : [];
+}
+
+function saveSession($phone, $data, $ttl = 1800) {
+    $redis = redisClient();
+    if ($redis) {
+        $redis->setex("wa:session:$phone", $ttl, json_encode($data));
+    }
+}
+
+function clearSession($phone) {
+    $redis = redisClient();
+    if ($redis) {
+        $redis->del("wa:session:$phone");
+    }
+}
 
 /* ==============================
    READ REQUEST (WhatsAuto)
@@ -22,6 +68,9 @@ parse_str($raw, $data);
 $message = trim($data['message'] ?? '');
 $messageLower = mb_strtolower($message, 'UTF-8');
 
+$phone = preg_replace('/\D/', '', $data['phone'] ?? $data['sender'] ?? 'unknown');
+$session = getSession($phone);
+
 /* ==============================
    LANGUAGE DETECTION
 ================================ */
@@ -30,60 +79,46 @@ function detectLang($text) {
     if (preg_match('/[\x{0900}-\x{097F}]/u', $text)) return "hi";
     return "en";
 }
-
 $lang = detectLang($message);
 
 /* ==============================
-   GREETING = MENU TRIGGER ONLY
+   TRIGGERS
 ================================ */
 function isMenuTrigger($text) {
-    $text = mb_strtolower(trim($text), 'UTF-8');
-
-    return in_array($text, [
-        "hi", "hello", "menu", "start"
-    ], true);
+    return in_array(mb_strtolower(trim($text),'UTF-8'),
+        ["hi","hello","menu","start"], true);
 }
 
-/* ==============================
-   AI START COMMAND
-================================ */
 function isAIStart($text) {
-    $text = mb_strtolower(trim($text), 'UTF-8');
-
-    return in_array($text, [
-        "start chat",
-        "ai chat"
-    ], true);
+    return in_array(mb_strtolower(trim($text),'UTF-8'),
+        ["start chat","ai chat"], true);
 }
 
 /* ==============================
    MENU
 ================================ */
 function mainMenu($lang, $clinic) {
-
     if ($lang === "te") {
         return "👋 *$clinic*\n\nనంబర్ పంపండి 👇\n\n"
-            ."1️⃣ మందుల ట్రాకింగ్ 💊\n"
-            ."2️⃣ ప్రిస్క్రిప్షన్ 📄\n"
-            ."3️⃣ అపాయింట్మెంట్ 📅\n"
-            ."4️⃣ క్లినిక్ వివరాలు 🏥\n"
+            ."1️⃣ మందుల ట్రాకింగ్\n"
+            ."2️⃣ ప్రిస్క్రిప్షన్\n"
+            ."3️⃣ అపాయింట్మెంట్\n"
+            ."4️⃣ క్లినిక్ వివరాలు\n"
             ."5️⃣ AI సహాయకుడితో మాట్లాడండి 🤖";
     }
-
     if ($lang === "hi") {
         return "👋 *$clinic*\n\nनंबर भेजें 👇\n\n"
-            ."1️⃣ दवा ट्रैक करें 💊\n"
-            ."2️⃣ प्रिस्क्रिप्शन 📄\n"
-            ."3️⃣ अपॉइंटमेंट 📅\n"
-            ."4️⃣ क्लिनिक जानकारी 🏥\n"
+            ."1️⃣ दवा ट्रैक करें\n"
+            ."2️⃣ प्रिस्क्रिप्शन\n"
+            ."3️⃣ अपॉइंटमेंट\n"
+            ."4️⃣ क्लिनिक जानकारी\n"
             ."5️⃣ AI सहायक से बात करें 🤖";
     }
-
     return "👋 *$clinic*\n\nReply with a number 👇\n\n"
-        ."1️⃣ Track Medicine 💊\n"
-        ."2️⃣ Prescriptions 📄\n"
-        ."3️⃣ Appointment 📅\n"
-        ."4️⃣ Clinic Details 🏥\n"
+        ."1️⃣ Track Medicine\n"
+        ."2️⃣ Prescriptions\n"
+        ."3️⃣ Appointment\n"
+        ."4️⃣ Clinic Details\n"
         ."5️⃣ Chat with AI Assistant 🤖";
 }
 
@@ -93,7 +128,7 @@ function mainMenu($lang, $clinic) {
 function askGemini($text, $lang, $apiKey) {
 
     if (!$apiKey) {
-        return "⚠️ AI service unavailable. Please contact the clinic.";
+        return "⚠️ AI unavailable. Please contact the clinic.";
     }
 
     $language =
@@ -133,15 +168,16 @@ function askGemini($text, $lang, $apiKey) {
 }
 
 /* ==============================
-   ROUTING (STRICT)
+   ROUTING (REDIS-BASED)
 ================================ */
 
-// 1️⃣ MENU ONLY FOR hi / hello / menu / start
+// MENU trigger resets session
 if (isMenuTrigger($message)) {
 
+    clearSession($phone);
     $reply = mainMenu($lang, $CLINIC_NAME);
 
-// 2️⃣ MENU OPTIONS
+// MENU OPTIONS
 } elseif (in_array($messageLower, ["1","2","3","4","5"], true)) {
 
     switch ($messageLower) {
@@ -151,33 +187,38 @@ if (isMenuTrigger($message)) {
         case "4": $reply = "🏥 $CLINIC_NAME\n🌐 $WEBSITE"; break;
 
         case "5":
-            $reply =
-                ($lang === "te") ? "🤖 AI తో మాట్లాడాలంటే\n👉 *START CHAT* అని టైప్ చేయండి."
-                : (($lang === "hi") ? "🤖 AI से बात करने के लिए\n👉 *START CHAT* लिखें।"
-                : "🤖 To chat with AI\n👉 type *START CHAT*");
+            $session['ai_mode'] = true;
+            saveSession($phone, $session);
+            $reply = "🤖 To chat with AI\n👉 type *START CHAT*";
             break;
     }
 
-// 3️⃣ AI START CONFIRMATION
-} elseif (isAIStart($message)) {
+// AI START
+} elseif (isAIStart($message) && !empty($session['ai_mode'])) {
 
-    $reply =
-        ($lang === "te") ? "🤖 మీరు ఇప్పుడు AI సహాయకుడితో మాట్లాడుతున్నారు. మీ సమస్యను టైప్ చేయండి."
-        : (($lang === "hi") ? "🤖 अब आप AI सहायक से बात कर रहे हैं। अपनी समस्या लिखें।"
-        : "🤖 You are now chatting with the AI assistant. Please describe your issue.");
+    $session['awaiting_question'] = true;
+    saveSession($phone, $session);
 
-// 4️⃣ AI ONE-SHOT RESPONSE
-} elseif (strlen($message) > 10) {
+    $reply = "🤖 Please describe your health issue.";
+
+// ONE-SHOT AI
+} elseif (!empty($session['awaiting_question'])) {
 
     $reply = askGemini($message, $lang, $GEMINI_API_KEY);
 
-// 5️⃣ EVERYTHING ELSE → NO MENU, NO AI
-} else {
+    // turn AI off after one reply
+    clearSession($phone);
 
-    $reply =
-        ($lang === "te") ? "ℹ️ మెనూ చూడాలంటే *hi* అని పంపండి."
-        : (($lang === "hi") ? "ℹ️ मेनू देखने के लिए *hi* लिखें।"
-        : "ℹ️ To view the menu, type *hi*.");
+// SHORT RANDOM TEXT → hint once
+} elseif (mb_strlen($message,'UTF-8') <= 8 && empty($session['hint_shown'])) {
+
+    $reply = "ℹ️ To view the menu, type *hi*.";
+    $session['hint_shown'] = true;
+    saveSession($phone, $session);
+
+// EVERYTHING ELSE → SILENT
+} else {
+    $reply = "";
 }
 
 /* ==============================
