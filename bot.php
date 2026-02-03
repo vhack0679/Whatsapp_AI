@@ -2,6 +2,13 @@
 header("Content-Type: application/json; charset=UTF-8");
 
 /* ==============================
+   AUTOLOAD (PREDIS)
+================================ */
+require __DIR__ . '/vendor/autoload.php';
+
+use Predis\Client;
+
+/* ==============================
    CONFIG
 ================================ */
 $CLINIC_NAME = "Vijaya Homoeopathic Clinic";
@@ -13,7 +20,7 @@ $APPOINTMENT_URL = "https://vijayahomoeopathic.rf.gd/App/appointment.html";
 $GEMINI_API_KEY = getenv("GEMINI_API_KEY");
 
 /* ==============================
-   REDIS CONNECTION
+   REDIS (PREDIS) CONNECTION
 ================================ */
 function redisClient() {
     static $redis = null;
@@ -22,15 +29,7 @@ function redisClient() {
     $url = getenv("REDIS_URL");
     if (!$url) return null;
 
-    $parts = parse_url($url);
-
-    $redis = new Redis();
-    $redis->connect($parts['host'], $parts['port']);
-
-    if (!empty($parts['pass'])) {
-        $redis->auth($parts['pass']);
-    }
-
+    $redis = new Client($url);
     return $redis;
 }
 
@@ -39,7 +38,7 @@ function redisClient() {
 ================================ */
 function getSession($phone) {
     $redis = redisClient();
-    if (!$redis) return [];
+    if (!$redis || !$phone) return [];
 
     $data = $redis->get("wa:session:$phone");
     return $data ? json_decode($data, true) : [];
@@ -47,14 +46,14 @@ function getSession($phone) {
 
 function saveSession($phone, $data, $ttl = 1800) {
     $redis = redisClient();
-    if ($redis) {
+    if ($redis && $phone) {
         $redis->setex("wa:session:$phone", $ttl, json_encode($data));
     }
 }
 
 function clearSession($phone) {
     $redis = redisClient();
-    if ($redis) {
+    if ($redis && $phone) {
         $redis->del("wa:session:$phone");
     }
 }
@@ -68,7 +67,7 @@ parse_str($raw, $data);
 $message = trim($data['message'] ?? '');
 $messageLower = mb_strtolower($message, 'UTF-8');
 
-$phone = preg_replace('/\D/', '', $data['phone'] ?? $data['sender'] ?? 'unknown');
+$phone = preg_replace('/\D/', '', $data['phone'] ?? $data['sender'] ?? '');
 $session = getSession($phone);
 
 /* ==============================
@@ -98,27 +97,30 @@ function isAIStart($text) {
    MENU
 ================================ */
 function mainMenu($lang, $clinic) {
+
     if ($lang === "te") {
         return "👋 *$clinic*\n\nనంబర్ పంపండి 👇\n\n"
-            ."1️⃣ మందుల ట్రాకింగ్\n"
-            ."2️⃣ ప్రిస్క్రిప్షన్\n"
-            ."3️⃣ అపాయింట్మెంట్\n"
-            ."4️⃣ క్లినిక్ వివరాలు\n"
+            ."1️⃣ మందుల ట్రాకింగ్ 💊\n"
+            ."2️⃣ ప్రిస్క్రిప్షన్ 📄\n"
+            ."3️⃣ అపాయింట్మెంట్ 📅\n"
+            ."4️⃣ క్లినిక్ వివరాలు 🏥\n"
             ."5️⃣ AI సహాయకుడితో మాట్లాడండి 🤖";
     }
+
     if ($lang === "hi") {
         return "👋 *$clinic*\n\nनंबर भेजें 👇\n\n"
-            ."1️⃣ दवा ट्रैक करें\n"
-            ."2️⃣ प्रिस्क्रिप्शन\n"
-            ."3️⃣ अपॉइंटमेंट\n"
-            ."4️⃣ क्लिनिक जानकारी\n"
+            ."1️⃣ दवा ट्रैक करें 💊\n"
+            ."2️⃣ प्रिस्क्रिप्शन 📄\n"
+            ."3️⃣ अपॉइंटमेंट 📅\n"
+            ."4️⃣ क्लिनिक जानकारी 🏥\n"
             ."5️⃣ AI सहायक से बात करें 🤖";
     }
+
     return "👋 *$clinic*\n\nReply with a number 👇\n\n"
-        ."1️⃣ Track Medicine\n"
-        ."2️⃣ Prescriptions\n"
-        ."3️⃣ Appointment\n"
-        ."4️⃣ Clinic Details\n"
+        ."1️⃣ Track Medicine 💊\n"
+        ."2️⃣ Prescriptions 📄\n"
+        ."3️⃣ Appointment 📅\n"
+        ."4️⃣ Clinic Details 🏥\n"
         ."5️⃣ Chat with AI Assistant 🤖";
 }
 
@@ -168,10 +170,10 @@ function askGemini($text, $lang, $apiKey) {
 }
 
 /* ==============================
-   ROUTING (REDIS-BASED)
+   ROUTING (REDIS SESSION BASED)
 ================================ */
 
-// MENU trigger resets session
+// MENU trigger → reset session
 if (isMenuTrigger($message)) {
 
     clearSession($phone);
@@ -181,10 +183,22 @@ if (isMenuTrigger($message)) {
 } elseif (in_array($messageLower, ["1","2","3","4","5"], true)) {
 
     switch ($messageLower) {
-        case "1": $reply = "📦 Track medicine:\n👉 $TRACK_URL"; break;
-        case "2": $reply = "📄 Prescriptions:\n👉 $PRESCRIPTION_URL"; break;
-        case "3": $reply = "📅 Appointment:\n👉 $APPOINTMENT_URL"; break;
-        case "4": $reply = "🏥 $CLINIC_NAME\n🌐 $WEBSITE"; break;
+
+        case "1":
+            $reply = "📦 Track medicine:\n👉 $TRACK_URL";
+            break;
+
+        case "2":
+            $reply = "📄 Prescriptions:\n👉 $PRESCRIPTION_URL";
+            break;
+
+        case "3":
+            $reply = "📅 Appointment:\n👉 $APPOINTMENT_URL";
+            break;
+
+        case "4":
+            $reply = "🏥 $CLINIC_NAME\n🌐 $WEBSITE";
+            break;
 
         case "5":
             $session['ai_mode'] = true;
@@ -201,12 +215,10 @@ if (isMenuTrigger($message)) {
 
     $reply = "🤖 Please describe your health issue.";
 
-// ONE-SHOT AI
+// ONE-SHOT AI RESPONSE
 } elseif (!empty($session['awaiting_question'])) {
 
     $reply = askGemini($message, $lang, $GEMINI_API_KEY);
-
-    // turn AI off after one reply
     clearSession($phone);
 
 // SHORT RANDOM TEXT → hint once
