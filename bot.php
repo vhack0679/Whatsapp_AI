@@ -20,19 +20,18 @@ $raw = file_get_contents("php://input");
 // Try JSON first
 $data = json_decode($raw, true);
 
-// If not JSON, fall back to form-urlencoded
+// Fallback to form-urlencoded
 if (!is_array($data)) {
     parse_str($raw, $data);
 }
 
-// Safely extract message
 $message = trim($data['message'] ?? '');
 $messageLower = mb_strtolower($message, 'UTF-8');
 
 /* ==============================
-   IGNORE INVALID INPUT
+   IGNORE JUNK INPUT
 ================================ */
-// Ignore pure phone numbers mistakenly sent as message
+// Ignore pure phone numbers sent by app
 if (preg_match('/^\+?\d{10,13}$/', $messageLower)) {
     echo json_encode(
         ["reply" => mainMenu("en", $CLINIC_NAME)],
@@ -84,7 +83,7 @@ function mainMenu($lang, $clinic) {
 }
 
 /* ==============================
-   GEMINI AI
+   GEMINI AI (FIXED MODEL)
 ================================ */
 function askGemini($userMessage, $lang, $apiKey) {
 
@@ -92,10 +91,12 @@ function askGemini($userMessage, $lang, $apiKey) {
         return "⚠️ AI service temporarily unavailable. Please contact the clinic.";
     }
 
-    $language = ($lang === "te") ? "Telugu" : (($lang === "hi") ? "Hindi" : "English");
+    $language =
+        ($lang === "te") ? "Telugu" :
+        (($lang === "hi") ? "Hindi" : "English");
 
     $prompt = "
-You are a clinic AI assistant in India.
+You are a homoeopathic clinic AI assistant in India.
 
 Rules:
 - Reply ONLY in $language
@@ -108,7 +109,7 @@ User message:
 $userMessage
 ";
 
-    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=$apiKey";
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey";
 
     $payload = [
         "contents" => [[
@@ -175,8 +176,8 @@ if ($messageLower === "" || in_array($messageLower, ["hi", "hello", "start"])) {
 
 } else {
 
-    // AI only for meaningful messages
-    if (mb_strlen($message, 'UTF-8') >= 6) {
+    // AI trigger: any real language characters
+    if (preg_match('/[a-zA-Z\x{0900}-\x{097F}\x{0C00}-\x{0C7F}]/u', $message)) {
         $reply = askGemini($message, $lang, $GEMINI_API_KEY);
     } else {
         $reply = mainMenu($lang, $CLINIC_NAME);
