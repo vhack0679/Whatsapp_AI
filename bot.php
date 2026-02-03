@@ -142,12 +142,16 @@ function askGemini($text, $lang, $apiKey) {
         ($lang === "te") ? "Telugu" :
         (($lang === "hi") ? "Hindi" : "English");
 
+    // IMPORTANT: softer, safer prompt
     $prompt =
+        "You are a caring clinic assistant.\n".
         "Reply ONLY in $language.\n".
-        "Give general health guidance only.\n".
-        "Do NOT diagnose or prescribe medicines.\n".
-        "Keep it short and caring.\n\n".
-        "User message:\n".$text;
+        "Do NOT diagnose.\n".
+        "Do NOT prescribe medicines.\n".
+        "Give general advice like rest, hydration, diet.\n".
+        "Encourage consulting a doctor.\n".
+        "Keep response short (2–3 lines).\n\n".
+        "User says:\n".$text;
 
     $url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=".$apiKey;
 
@@ -163,15 +167,20 @@ function askGemini($text, $lang, $apiKey) {
         CURLOPT_POST => true,
         CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
         CURLOPT_POSTFIELDS => json_encode($payload),
-        CURLOPT_TIMEOUT => 15
+        CURLOPT_TIMEOUT => 20
     ]);
 
     $response = curl_exec($ch);
     curl_close($ch);
 
     $json = json_decode($response, true);
-    return $json['candidates'][0]['content']['parts'][0]['text']
-        ?? "🙏 Please consult our doctor for proper guidance.";
+
+    // DEBUG SAFETY
+    if (!isset($json['candidates'][0]['content']['parts'][0]['text'])) {
+        return "🤖 I understand your concern.\nPlease consult our doctor for proper guidance.";
+    }
+
+    return trim($json['candidates'][0]['content']['parts'][0]['text']);
 }
 
 /* ==============================
