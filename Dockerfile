@@ -1,12 +1,30 @@
+# Use official PHP + Apache
 FROM php:8.2-apache
 
-# Enable Apache rewrite (safe default)
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    unzip \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+# Set working directory
+WORKDIR /var/www/html
+
+# Copy composer files first (for caching)
+COPY composer.json composer.lock* ./
+
+# Install PHP dependencies (Predis)
+RUN composer install --no-dev --optimize-autoloader
+
+# Copy rest of the app
+COPY . .
+
+# Enable Apache rewrite (optional)
 RUN a2enmod rewrite
 
-# Copy all files to web root
-COPY . /var/www/html/
-
-# Set permissions
-RUN chown -R www-data:www-data /var/www/html
-
+# Expose port
 EXPOSE 80
