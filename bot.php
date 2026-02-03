@@ -1,10 +1,15 @@
 <?php
 header("Content-Type: application/json; charset=UTF-8");
 
-/* ==============================
-   AUTOLOAD (PREDIS)
-================================ */
-require __DIR__ . '/vendor/autoload.php';
+$autoload = __DIR__ . '/vendor/autoload.php';
+if (!file_exists($autoload)) {
+    echo json_encode([
+        "reply" => "⚠️ Server is starting. Please try again in a moment."
+    ]);
+    exit;
+}
+
+require $autoload;
 
 use Predis\Client;
 
