@@ -10,11 +10,11 @@ $TRACK_URL = "https://vijayahomoeopathic.rf.gd/App/track.html";
 $PRESCRIPTION_URL = "https://vijayahomoeopathic.rf.gd/App/prescriptions.html";
 $APPOINTMENT_URL = "https://vijayahomoeopathic.rf.gd/App/appointment.html";
 
-$DOCTOR_WHATSAPP = "9198XXXXXXXX"; // doctor number without +
+$DOCTOR_WHATSAPP = "9198XXXXXXXX"; // no +
 $GEMINI_API_KEY = getenv("GEMINI_API_KEY");
 
 /* ==============================
-   READ REQUEST (WhatsAuto)
+   READ REQUEST
 ================================ */
 $raw = file_get_contents("php://input");
 parse_str($raw, $data);
@@ -34,67 +34,70 @@ function detectLang($text) {
 $lang = detectLang($message);
 
 /* ==============================
-   GREETING DETECTION (CRITICAL)
+   GREETING
 ================================ */
 function isGreeting($text) {
-    $text = trim(mb_strtolower($text, 'UTF-8'));
-
-    $greetings = [
-        // English
+    $text = mb_strtolower(trim($text), 'UTF-8');
+    return in_array($text, [
         "hi","hello","hey","start",
-
-        // Telugu
         "నమస్తే","నమస్కారం","హలో",
-
-        // Hindi
-        "नमस्ते","नमस्कार","हैलो","हाय"
-    ];
-
-    return in_array($text, $greetings, true);
+        "नमस्ते","नमस्कार","हैलो"
+    ], true);
 }
 
 /* ==============================
-   MAIN MENU
+   AI START COMMAND
+================================ */
+function isAIStart($text) {
+    $text = mb_strtolower(trim($text), 'UTF-8');
+    return in_array($text, [
+        "start chat",
+        "ai chat",
+        "చాట్ ప్రారంభించండి",
+        "చాట్ మొదలుపెట్టు",
+        "चैट शुरू करें",
+        "ai शुरू"
+    ], true);
+}
+
+/* ==============================
+   MENU
 ================================ */
 function mainMenu($lang, $clinic) {
-
     if ($lang === "te") {
-        return "👋 *$clinic*\n\nదయచేసి నంబర్ పంపండి 👇\n\n"
-            ."1️⃣ మందుల ట్రాకింగ్ 💊\n"
-            ."2️⃣ ప్రిస్క్రిప్షన్ 📄\n"
-            ."3️⃣ అపాయింట్మెంట్ 📅\n"
-            ."4️⃣ క్లినిక్ వివరాలు 🏥\n"
-            ."5️⃣ సహాయకుడితో మాట్లాడండి 🤖";
+        return "👋 *$clinic*\n\nనంబర్ పంపండి 👇\n\n"
+            ."1️⃣ మందుల ట్రాకింగ్\n"
+            ."2️⃣ ప్రిస్క్రిప్షన్\n"
+            ."3️⃣ అపాయింట్మెంట్\n"
+            ."4️⃣ క్లినిక్ వివరాలు\n"
+            ."5️⃣ AI సహాయకుడితో మాట్లాడండి 🤖";
     }
-
     if ($lang === "hi") {
-        return "👋 *$clinic*\n\nकृपया नंबर भेजें 👇\n\n"
-            ."1️⃣ दवा ट्रैक करें 💊\n"
-            ."2️⃣ प्रिस्क्रिप्शन 📄\n"
-            ."3️⃣ अपॉइंटमेंट 📅\n"
-            ."4️⃣ क्लिनिक जानकारी 🏥\n"
-            ."5️⃣ सहायक से बात करें 🤖";
+        return "👋 *$clinic*\n\nनंबर भेजें 👇\n\n"
+            ."1️⃣ दवा ट्रैक करें\n"
+            ."2️⃣ प्रिस्क्रिप्शन\n"
+            ."3️⃣ अपॉइंटमेंट\n"
+            ."4️⃣ क्लिनिक जानकारी\n"
+            ."5️⃣ AI सहायक से बात करें 🤖";
     }
-
-    return "👋 *$clinic*\n\nPlease reply with a number 👇\n\n"
-        ."1️⃣ Track Medicine 💊\n"
-        ."2️⃣ Prescriptions 📄\n"
-        ."3️⃣ Book Appointment 📅\n"
-        ."4️⃣ Clinic Details 🏥\n"
-        ."5️⃣ Chat with Assistant 🤖";
+    return "👋 *$clinic*\n\nReply with a number 👇\n\n"
+        ."1️⃣ Track Medicine\n"
+        ."2️⃣ Prescriptions\n"
+        ."3️⃣ Appointment\n"
+        ."4️⃣ Clinic Details\n"
+        ."5️⃣ Chat with AI Assistant 🤖";
 }
 
 /* ==============================
-   DOCTOR LINK (ONLY ON YES)
+   DOCTOR LINK
 ================================ */
 function doctorLink($userMessage, $lang, $doctorNumber) {
-
     $label =
         ($lang === "te") ? "రోగి సందేశం:\n" :
         (($lang === "hi") ? "मरीज का संदेश:\n" :
         "Patient message:\n");
 
-    return "https://wa.me/$doctorNumber?text=" . urlencode($label . $userMessage);
+    return "https://wa.me/$doctorNumber?text=" . urlencode($label.$userMessage);
 }
 
 /* ==============================
@@ -145,56 +148,59 @@ function askGemini($text, $lang, $apiKey) {
     }
 
     if ($lang === "te") {
-        return trim($aiText)
-            . "\n\n👨‍⚕️ డాక్టర్‌తో మాట్లాడాలా?\nYES / NO అని రిప్లై చేయండి.";
+        return trim($aiText)."\n\n👨‍⚕️ డాక్టర్‌తో మాట్లాడాలా?\nYES / NO అని రిప్లై చేయండి.";
     }
-
     if ($lang === "hi") {
-        return trim($aiText)
-            . "\n\n👨‍⚕️ क्या आप डॉक्टर से बात करना चाहते हैं?\nYES / NO लिखें।";
+        return trim($aiText)."\n\n👨‍⚕️ क्या आप डॉक्टर से बात करना चाहते हैं?\nYES / NO लिखें।";
     }
-
-    return trim($aiText)
-        . "\n\n👨‍⚕️ Do you want to talk to a real doctor?\nReply YES or NO.";
+    return trim($aiText)."\n\n👨‍⚕️ Do you want to talk to a real doctor?\nReply YES or NO.";
 }
 
 /* ==============================
-   ROUTING (FINAL, CORRECT)
+   ROUTING (FIXED)
 ================================ */
 
-// 1️⃣ Greeting or empty → MENU
+// Greeting → Menu
 if ($message === "" || isGreeting($message)) {
-
     $reply = mainMenu($lang, $CLINIC_NAME);
 
-// 2️⃣ Menu options
+// Menu options
 } elseif (in_array($messageLower, ["1","2","3","4","5"], true)) {
 
     switch ($messageLower) {
         case "1": $reply = "📦 Track medicine:\n👉 $TRACK_URL"; break;
         case "2": $reply = "📄 Prescriptions:\n👉 $PRESCRIPTION_URL"; break;
-        case "3": $reply = "📅 Book appointment:\n👉 $APPOINTMENT_URL"; break;
+        case "3": $reply = "📅 Appointment:\n👉 $APPOINTMENT_URL"; break;
         case "4": $reply = "🏥 $CLINIC_NAME\n🌐 $WEBSITE"; break;
+
         case "5":
             $reply =
-                ($lang === "te") ? "🤖 మీరు ఇప్పుడు AI సహాయకుడితో మాట్లాడవచ్చు. మీ ఆరోగ్య సమస్యను టైప్ చేయండి."
-                : (($lang === "hi") ? "🤖 अब आप AI सहायक से बात कर सकते हैं। अपनी समस्या लिखें।"
-                : "🤖 You are now chatting with our AI assistant. Please describe your issue.");
+                ($lang === "te") ? "🤖 AI తో మాట్లాడాలంటే\n👉 *చాట్ ప్రారంభించండి* అని టైప్ చేయండి."
+                : (($lang === "hi") ? "🤖 AI से बात करने के लिए\n👉 *START CHAT* लिखें।"
+                : "🤖 To chat with AI\n👉 type *START CHAT*");
             break;
     }
 
-// 3️⃣ Doctor confirmation ONLY
+// AI starts ONLY here
+} elseif (isAIStart($message)) {
+
+    $reply =
+        ($lang === "te") ? "🤖 మీరు ఇప్పుడు AI సహాయకుడితో మాట్లాడుతున్నారు. మీ సమస్యను టైప్ చేయండి."
+        : (($lang === "hi") ? "🤖 अब आप AI सहायक से बात कर रहे हैं। अपनी समस्या लिखें।"
+        : "🤖 You are now chatting with the AI assistant. Please describe your issue.");
+
+// Doctor confirmation
 } elseif (in_array($messageLower, ["yes","avunu","haan","ha","ok"], true)) {
 
     $reply =
-        ($lang === "te") ? "👨‍⚕️ డాక్టర్‌కు మీ సందేశాన్ని పంపండి:\n👉 ".doctorLink($message, $lang, $DOCTOR_WHATSAPP)
+        ($lang === "te") ? "👨‍⚕️ డాక్టర్‌కు మీ సందేశం పంపండి:\n👉 ".doctorLink($message, $lang, $DOCTOR_WHATSAPP)
         : (($lang === "hi") ? "👨‍⚕️ डॉक्टर को संदेश भेजें:\n👉 ".doctorLink($message, $lang, $DOCTOR_WHATSAPP)
         : "👨‍⚕️ Send your message to the doctor:\n👉 ".doctorLink($message, $lang, $DOCTOR_WHATSAPP));
 
-// 4️⃣ AI ONLY AFTER OPTION 5
+// Everything else → MENU (NO AI!)
 } else {
 
-    $reply = askGemini($message, $lang, $GEMINI_API_KEY);
+    $reply = mainMenu($lang, $CLINIC_NAME);
 }
 
 /* ==============================
